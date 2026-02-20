@@ -140,13 +140,14 @@ python src/main.py
 
 실행 시 FFmpeg가 없으면 시작 전에 한글 오류로 종료됩니다.
 
+
 > 이미 설치된 가상환경에서 `lavalink.integrations` 오류가 난다면 아래처럼 의존성을 다시 설치하세요.
 > ```powershell
 > pip uninstall -y lavalink
 > pip install -r requirements.txt
 > ```
 
----
+
 
 ## 7. 한글 슬래시 커맨드
 
