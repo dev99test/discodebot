@@ -1,0 +1,3 @@
+discord.py==2.4.0
+lavalink==4.0.3
+PyYAML==6.0.2
