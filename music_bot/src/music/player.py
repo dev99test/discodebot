@@ -34,8 +34,8 @@ class MusicPlayer:
             password=self.config.lavalink.password,
             region="asia",
             name="main",
-            reconnect_attempts=-1,
-            reconnect_delay=5,
+
+
         )
 
     async def close(self) -> None:
