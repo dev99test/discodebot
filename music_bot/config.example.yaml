@@ -1,0 +1,12 @@
+discord:
+  token: ""
+  guild_ids: [123456789]
+lavalink:
+  host: "127.0.0.1"
+  port: 2333
+  password: "youshallnotpass"
+  use_ssl: false
+bot:
+  default_volume: 100
+  progress_update_sec: 2
+  search_results: 10
