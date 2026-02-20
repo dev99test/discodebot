@@ -4,29 +4,33 @@ import re
 
 import lavalink
 
-BAD_WORDS = ("live", "cover")
+BLOCK_WORDS = ("live", "cover")
 
 
 def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
 
-def pick_recommendation(
-    last_track: lavalink.AudioTrack, candidates: list[lavalink.AudioTrack]
-) -> lavalink.AudioTrack | None:
-    if not candidates:
-        return None
+def is_safe_track(track: lavalink.AudioTrack) -> bool:
+    title = _normalize(track.title)
+    if track.duration < 30_000:
+        return False
+    if any(word in title for word in BLOCK_WORDS):
+        return False
+    return True
 
+
+def pick_recommendation(
+    last_track: lavalink.AudioTrack,
+    candidates: list[lavalink.AudioTrack],
+) -> lavalink.AudioTrack | None:
     last_title = _normalize(last_track.title)
     for track in candidates:
-        title = _normalize(track.title)
         if track.identifier == last_track.identifier:
             continue
-        if track.duration < 30_000:
+        if _normalize(track.title) == last_title:
             continue
-        if any(word in title for word in BAD_WORDS):
-            continue
-        if title == last_title:
+        if not is_safe_track(track):
             continue
         return track
     return None

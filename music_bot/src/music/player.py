@@ -10,7 +10,7 @@ from lavalink.integrations.discord import LavalinkVoiceClient
 from config import AppConfig
 from music.guild_manager import GuildManager
 from music.progress import render_progress
-from music.recommend import pick_recommendation
+from music.recommend import is_safe_track, pick_recommendation
 from utils.timefmt import format_ms
 
 logger = logging.getLogger(__name__)
@@ -21,16 +21,22 @@ class MusicPlayer:
         self.bot = bot
         self.config = config
         self.manager = GuildManager()
-        self.lavalink = lavalink.Client(bot.user.id)  # type: ignore[arg-type]
+        if bot.user is None:
+            raise RuntimeError("봇 사용자 정보를 가져오지 못했습니다.")
+        self.lavalink = lavalink.Client(bot.user.id)
+        self._add_node()
+        self.lavalink.add_event_hooks(self)
+
+    def _add_node(self) -> None:
         self.lavalink.add_node(
-            host=config.lavalink.host,
-            port=config.lavalink.port,
-            password=config.lavalink.password,
+            host=self.config.lavalink.host,
+            port=self.config.lavalink.port,
+            password=self.config.lavalink.password,
             region="asia",
             name="main",
-            ssl=config.lavalink.use_ssl,
+            reconnect_attempts=-1,
+            reconnect_delay=5,
         )
-        self.lavalink.add_event_hooks(self)
 
     async def close(self) -> None:
         await self.lavalink.close()
@@ -54,7 +60,6 @@ class MusicPlayer:
             await vc.move_to(member.voice.channel)
 
         player = self.lavalink.player_manager.create(guild.id)
-        player.store("channel", interaction.channel_id)
         state = await self.manager.get(guild.id)
         state.text_channel_id = interaction.channel_id
         return player
@@ -65,26 +70,32 @@ class MusicPlayer:
         await self.manager.clear_state(guild.id)
 
     async def search_tracks(self, query: str) -> list[lavalink.AudioTrack]:
-        node = self.lavalink.node_manager.get_nodes()[0]
-        if query.startswith("http://") or query.startswith("https://"):
-            result = await node.get_tracks(query)
-        else:
-            result = await node.get_tracks(f"ytsearch:{query}")
+        nodes = self.lavalink.node_manager.get_nodes()
+        if not nodes:
+            raise RuntimeError("Lavalink 노드에 연결되어 있지 않습니다.")
 
-        load_type = result.get("loadType")
-        tracks = result.get("tracks", [])
-        if load_type == "playlist":
-            return tracks
-        return tracks
+        node = nodes[0]
+        search_query = query if query.startswith(("http://", "https://")) else f"ytsearch:{query}"
+        result = await node.get_tracks(search_query)
+        return result.get("tracks", [])
+
+    async def search_safe_tracks(self, query: str, limit: int) -> list[lavalink.AudioTrack]:
+        tracks = await self.search_tracks(query)
+        filtered = [t for t in tracks if is_safe_track(t)]
+        return filtered[:limit]
 
     async def enqueue_and_maybe_play(
-        self, guild_id: int, player: lavalink.DefaultPlayer, track: lavalink.AudioTrack
+        self,
+        guild_id: int,
+        player: lavalink.DefaultPlayer,
+        track: lavalink.AudioTrack,
     ) -> bool:
         state = await self.manager.get(guild_id)
-        await state.queue.push(track)
-        if not player.is_playing and not player.paused:
-            await self._play_next(guild_id, player)
-            return True
+        async with state.lock:
+            await state.queue.push(track)
+            if not player.is_playing and not player.paused and not player.current:
+                await self._play_next(guild_id, player)
+                return True
         return False
 
     async def _play_next(self, guild_id: int, player: lavalink.DefaultPlayer) -> None:
@@ -95,42 +106,40 @@ class MusicPlayer:
         await player.play(next_track)
         await player.set_volume(self.config.bot.default_volume)
 
-    async def skip(self, guild_id: int, player: lavalink.DefaultPlayer) -> None:
+    async def skip(self, player: lavalink.DefaultPlayer) -> None:
         await player.stop()
 
     async def stop_clear(self, guild_id: int, player: lavalink.DefaultPlayer) -> None:
         state = await self.manager.get(guild_id)
-        await state.queue.clear()
-        await player.stop()
+        async with state.lock:
+            await state.queue.clear()
+            await player.stop()
 
-    async def queue_text(self, guild_id: int, page: int = 1, size: int = 10) -> str:
+    async def queue_page(self, guild_id: int, page: int = 1, size: int = 10) -> tuple[str, int]:
         state = await self.manager.get(guild_id)
         items = await state.queue.snapshot()
         if not items:
-            return "큐가 비어 있습니다."
+            return "큐가 비어 있습니다.", 1
 
-        page = max(1, page)
+        max_page = (len(items) - 1) // size + 1
+        page = min(max_page, max(1, page))
         start = (page - 1) * size
         end = start + size
         sliced = items[start:end]
-        if not sliced:
-            return "해당 페이지에 표시할 곡이 없습니다."
 
-        lines = [f"📜 큐 목록 (페이지 {page})"]
+        lines = [f"📜 큐 목록 (페이지 {page}/{max_page})"]
         for i, track in enumerate(sliced, start=start + 1):
             lines.append(f"{i}. {track.title} - {track.author} ({format_ms(track.duration)})")
-        return "\n".join(lines)
+        return "\n".join(lines), max_page
 
     async def now_playing_text(self, player: lavalink.DefaultPlayer) -> str:
         if not player.current:
             return "현재 재생 중인 곡이 없습니다."
         bar = render_progress(player.position, player.current.duration)
-        return f"🎵 현재 곡: {player.current.title}\n{bar}"
+        return f"🎵 현재 재생: **{player.current.title}**\n{bar}"
 
-    async def ensure_progress_task(
-        self, interaction: discord.Interaction, player: lavalink.DefaultPlayer
-    ) -> None:
-        state = await self.manager.get(interaction.guild_id)
+    async def ensure_progress_task(self, guild_id: int, player: lavalink.DefaultPlayer) -> None:
+        state = await self.manager.get(guild_id)
         if state.progress_task and not state.progress_task.done():
             return
 
@@ -140,12 +149,11 @@ class MusicPlayer:
                 if not player.current or not state.progress_message:
                     continue
                 try:
-                    text = await self.now_playing_text(player)
-                    await state.progress_message.edit(content=text)
+                    await state.progress_message.edit(content=await self.now_playing_text(player))
                 except discord.HTTPException:
-                    logger.debug("진행바 메시지 수정 실패", exc_info=True)
+                    logger.debug("진행바 메시지 갱신 실패", exc_info=True)
 
-        state.progress_task = asyncio.create_task(runner(), name=f"progress-{interaction.guild_id}")
+        state.progress_task = asyncio.create_task(runner(), name=f"progress-{guild_id}")
 
     @lavalink.listener(lavalink.events.TrackStartEvent)
     async def on_track_start(self, event: lavalink.events.TrackStartEvent) -> None:
@@ -156,19 +164,24 @@ class MusicPlayer:
     async def on_track_end(self, event: lavalink.events.TrackEndEvent) -> None:
         guild_id = event.player.guild_id
         state = await self.manager.get(guild_id)
-        await self._play_next(guild_id, event.player)
 
-        if event.player.current is None and state.radio_mode and state.last_track:
-            query = f"ytsearch:{state.last_track.title} {state.last_track.author}"
-            node = self.lavalink.node_manager.get_nodes()[0]
-            result = await node.get_tracks(query)
-            tracks = result.get("tracks", [])
-            pick = pick_recommendation(state.last_track, tracks)
-            if pick:
-                await state.queue.push(pick)
-                await self._play_next(guild_id, event.player)
-                channel_id = state.text_channel_id
-                if channel_id:
-                    channel = self.bot.get_channel(channel_id)
-                    if isinstance(channel, discord.TextChannel):
-                        await channel.send(f"📻 라디오 모드 추천곡 추가: **{pick.title}**")
+        async with state.lock:
+            await self._play_next(guild_id, event.player)
+
+            if event.player.current is None and state.radio_mode and state.last_track:
+                node = self.lavalink.node_manager.get_nodes()[0]
+                query = f"ytsearch:{state.last_track.title} {state.last_track.author}"
+                result = await node.get_tracks(query)
+                pick = pick_recommendation(state.last_track, result.get("tracks", []))
+                if pick:
+                    await state.queue.push(pick)
+                    await self._play_next(guild_id, event.player)
+                    channel_id = state.text_channel_id
+                    if channel_id:
+                        channel = self.bot.get_channel(channel_id)
+                        if isinstance(channel, discord.TextChannel):
+                            await channel.send(f"📻 라디오 모드 추천곡 추가: **{pick.title}**")
+
+    @lavalink.listener(lavalink.events.NodeDisconnectedEvent)
+    async def on_node_disconnect(self, _: lavalink.events.NodeDisconnectedEvent) -> None:
+        logger.warning("Lavalink 연결이 끊어졌습니다. 자동 재연결을 시도합니다.")

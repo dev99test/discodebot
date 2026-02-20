@@ -1,11 +1,12 @@
 discord:
   token: ""
-  guild_ids: [123456789]
+  test_guild_ids: []
+
 lavalink:
-  host: "127.0.0.1"
-  port: 2333
-  password: "youshallnotpass"
-  use_ssl: false
+  host: ""
+  port: 0
+  password: ""
+
 bot:
   default_volume: 100
   progress_update_sec: 2
