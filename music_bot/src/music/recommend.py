@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+
 from typing import Any
+
 
 BLOCK_WORDS = ("live", "cover")
 
@@ -10,10 +12,12 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
 
+
 def is_safe_track(track: Any) -> bool:
     title = _normalize(getattr(track, "title", ""))
     duration = int(getattr(track, "length", getattr(track, "duration", 0)))
     if duration < 30_000:
+
         return False
     if any(word in title for word in BLOCK_WORDS):
         return False
@@ -29,6 +33,7 @@ def pick_recommendation(last_track: Any, candidates: list[Any]) -> Any | None:
         if last_id is not None and curr_id == last_id:
             continue
         if _normalize(getattr(track, "title", "")) == last_title:
+
             continue
         if not is_safe_track(track):
             continue

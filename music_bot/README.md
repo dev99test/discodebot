@@ -147,7 +147,8 @@ python src/main.py
 > pip install -r requirements.txt
 > ```
 
----
+
+
 
 ## 7. 한글 슬래시 커맨드
 
@@ -172,6 +173,7 @@ python src/main.py
 - 검색/라디오 자동재생 시 `live`, `cover`, 30초 미만 트랙 필터링
 - `/현재` 진행 메시지는 길드당 1개만 갱신(스팸 방지)
 - Lavalink 연결 끊김 이벤트를 감지하고 재연결 로그 출력
+
 
 
 ## 9. `No module named lavalink.integrations` 오류가 계속 날 때
@@ -200,4 +202,5 @@ rg "lavalink\.integrations|LavalinkVoiceClient" src
 
 정상이라면 `src/music/player.py`에는 `DiscordLavalinkVoiceClient` 클래스가 보이고,
 `from lavalink.integrations.discord import LavalinkVoiceClient` 문장은 없어야 합니다.
+
 

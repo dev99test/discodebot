@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+
 from typing import Any
 
 import discord
 import pomice
+
 
 from config import AppConfig
 from music.guild_manager import GuildManager
@@ -21,6 +23,7 @@ class MusicPlayer:
         self.bot = bot
         self.config = config
         self.manager = GuildManager()
+
         self.node_pool = pomice.NodePool()
         self._node_ready = False
 
@@ -41,6 +44,7 @@ class MusicPlayer:
         return
 
     async def ensure_voice(self, interaction: discord.Interaction) -> pomice.Player:
+
         guild = interaction.guild
         if guild is None:
             raise RuntimeError("길드에서만 사용할 수 있습니다.")
@@ -48,6 +52,7 @@ class MusicPlayer:
         member = interaction.user if isinstance(interaction.user, discord.Member) else None
         if member is None or member.voice is None or member.voice.channel is None:
             raise RuntimeError("먼저 음성 채널에 입장해주세요.")
+
 
         channel = member.voice.channel
         vc = guild.voice_client
@@ -64,6 +69,7 @@ class MusicPlayer:
         if not hasattr(player, "queue"):
             player.queue = pomice.Queue()
 
+
         state = await self.manager.get(guild.id)
         state.text_channel_id = interaction.channel_id
         return player
@@ -72,6 +78,7 @@ class MusicPlayer:
         if guild.voice_client:
             await guild.voice_client.disconnect(force=True)
         await self.manager.clear_state(guild.id)
+
 
     async def _search(self, query: str) -> list[Any]:
         if not self._node_ready:
@@ -100,17 +107,21 @@ class MusicPlayer:
         async with state.lock:
             await state.queue.push(track)
             if not player.is_playing and not player.is_paused:
+
                 await self._play_next(guild_id, player)
                 return True
         return False
 
+
     async def _play_next(self, guild_id: int, player: pomice.Player) -> None:
+
         state = await self.manager.get(guild_id)
         next_track = await state.queue.pop_left()
         if next_track is None:
             return
         await player.play(next_track)
         await player.set_volume(self.config.bot.default_volume)
+
         state.last_track = next_track
 
     async def skip(self, player: pomice.Player) -> None:
@@ -118,6 +129,7 @@ class MusicPlayer:
             await player.stop()
 
     async def stop_clear(self, guild_id: int, player: pomice.Player) -> None:
+ain
         state = await self.manager.get(guild_id)
         async with state.lock:
             await state.queue.clear()
@@ -133,6 +145,7 @@ class MusicPlayer:
         page = min(max_page, max(1, page))
         start = (page - 1) * size
         end = start + size
+
 
         lines = [f"📜 큐 목록 (페이지 {page}/{max_page})"]
         for i, track in enumerate(items[start:end], start=start + 1):
@@ -151,6 +164,7 @@ class MusicPlayer:
         return f"🎵 현재 재생: **{getattr(current, 'title', '제목 없음')}**\n{bar}"
 
     async def ensure_progress_task(self, guild_id: int, player: pomice.Player) -> None:
+
         state = await self.manager.get(guild_id)
         if state.progress_task and not state.progress_task.done():
             return
@@ -158,7 +172,9 @@ class MusicPlayer:
         async def runner() -> None:
             while True:
                 await asyncio.sleep(self.config.bot.progress_update_sec)
+
                 if not getattr(player, "current", None) or not state.progress_message:
+
                     continue
                 try:
                     await state.progress_message.edit(content=await self.now_playing_text(player))
@@ -166,6 +182,7 @@ class MusicPlayer:
                     logger.debug("진행바 메시지 갱신 실패", exc_info=True)
 
         state.progress_task = asyncio.create_task(runner(), name=f"progress-{guild_id}")
+
 
     async def handle_track_end(self, guild_id: int, player: pomice.Player) -> None:
         state = await self.manager.get(guild_id)
@@ -179,8 +196,11 @@ class MusicPlayer:
                 if pick:
                     await state.queue.push(pick)
                     await self._play_next(guild_id, player)
+
                     channel_id = state.text_channel_id
                     if channel_id:
                         channel = self.bot.get_channel(channel_id)
                         if isinstance(channel, discord.TextChannel):
+
                             await channel.send(f"📻 라디오 모드 추천곡 추가: **{getattr(pick, 'title', '추천곡')}**")
+

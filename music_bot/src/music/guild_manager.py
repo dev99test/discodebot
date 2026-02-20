@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+
 from typing import Any
 
 import discord
+
 
 from music.queue import AsyncQueue
 
@@ -18,7 +20,9 @@ class GuildState:
     progress_message: discord.Message | None = None
     progress_task: asyncio.Task | None = None
     text_channel_id: int | None = None
+
     last_track: Any | None = None
+
 
 
 class GuildManager:
