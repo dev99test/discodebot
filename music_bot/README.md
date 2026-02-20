@@ -140,12 +140,13 @@ python src/main.py
 
 실행 시 FFmpeg가 없으면 시작 전에 한글 오류로 종료됩니다.
 
-
-> 이미 설치된 가상환경에서 `lavalink.integrations` 오류가 난다면 아래처럼 의존성을 다시 설치하세요.
+> 이 프로젝트는 `pomice==2.10.0` 기준입니다.
+> 기존 가상환경이 꼬였으면 아래처럼 재설치하세요.
 > ```powershell
-> pip uninstall -y lavalink
+> pip uninstall -y pomice lavalink
 > pip install -r requirements.txt
 > ```
+
 
 
 
@@ -172,4 +173,34 @@ python src/main.py
 - 검색/라디오 자동재생 시 `live`, `cover`, 30초 미만 트랙 필터링
 - `/현재` 진행 메시지는 길드당 1개만 갱신(스팸 방지)
 - Lavalink 연결 끊김 이벤트를 감지하고 재연결 로그 출력
+
+
+
+## 9. `No module named lavalink.integrations` 오류가 계속 날 때
+
+아래는 **구버전 코드가 남아 있을 때** 자주 발생합니다.
+
+```powershell
+# 1) 최신 코드 받기
+cd <프로젝트_루트>
+git pull
+
+# 2) 가상환경 재생성(권장)
+rmdir /s /q .venv
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -U pip
+pip install -r requirements.txt
+
+# 3) 캐시 제거
+for /d /r . %d in (__pycache__) do @if exist "%d" rd /s /q "%d"
+del /s /q *.pyc
+
+# 4) 문제 import가 남아있는지 확인
+rg "lavalink\.integrations|LavalinkVoiceClient" src
+```
+
+정상이라면 `src/music/player.py`에는 `DiscordLavalinkVoiceClient` 클래스가 보이고,
+`from lavalink.integrations.discord import LavalinkVoiceClient` 문장은 없어야 합니다.
+
 

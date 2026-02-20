@@ -4,20 +4,23 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 import discord
-import lavalink
+
 
 from utils.timefmt import format_ms
 
-OnTrackPicked = Callable[[discord.Interaction, lavalink.AudioTrack], Coroutine[Any, Any, None]]
+OnTrackPicked = Callable[[discord.Interaction, Any], Coroutine[Any, Any, None]]
+
 OnPageChange = Callable[[discord.Interaction, int], Coroutine[Any, Any, None]]
 
 
 class SearchSelect(discord.ui.Select):
-    def __init__(self, tracks: list[lavalink.AudioTrack], on_pick: OnTrackPicked):
+
+    def __init__(self, tracks: list[Any], on_pick: OnTrackPicked):
         options = [
             discord.SelectOption(
-                label=f"{idx}. {track.title[:90]}",
-                description=f"{track.author[:50]} | {format_ms(track.duration)}",
+                label=f"{idx}. {getattr(track, 'title', '제목 없음')[:90]}",
+                description=f"{getattr(track, 'author', '알 수 없음')[:50]} | {format_ms(int(getattr(track, 'length', getattr(track, 'duration', 0))))}",
+
                 value=str(idx - 1),
             )
             for idx, track in enumerate(tracks, start=1)
@@ -31,7 +34,9 @@ class SearchSelect(discord.ui.Select):
 
 
 class SearchView(discord.ui.View):
-    def __init__(self, tracks: list[lavalink.AudioTrack], on_pick: OnTrackPicked):
+
+    def __init__(self, tracks: list[Any], on_pick: OnTrackPicked):
+
         super().__init__(timeout=60)
         self.add_item(SearchSelect(tracks, on_pick))
 

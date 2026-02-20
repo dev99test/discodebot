@@ -4,6 +4,9 @@ import logging
 from typing import Literal
 
 import discord
+
+import pomice
+
 from discord import app_commands
 from discord.ext import commands
 
@@ -20,10 +23,21 @@ class MusicCommands(commands.Cog):
         self.player = player
         self.config = config
 
-    async def _player_for_interaction(self, interaction: discord.Interaction):
-        if interaction.guild_id is None:
+
+    async def _player_for_interaction(self, interaction: discord.Interaction) -> pomice.Player:
+        if interaction.guild is None:
             raise RuntimeError("길드에서만 사용할 수 있습니다.")
-        return self.player.lavalink.player_manager.create(interaction.guild_id)
+
+        vc = interaction.guild.voice_client
+        if not isinstance(vc, pomice.Player):
+            raise RuntimeError("봇이 음성 채널에 없습니다. /선수입장 을 먼저 사용하세요.")
+        return vc
+
+    @commands.Cog.listener()
+    async def on_pomice_track_end(self, player: pomice.Player, track, reason) -> None:
+        if player.guild:
+            await self.player.handle_track_end(player.guild.id, player)
+
 
     @app_commands.command(name="선수입장", description="내가 있는 음성 채널로 봇 입장")
     async def join_voice(self, interaction: discord.Interaction) -> None:
@@ -46,19 +60,23 @@ class MusicCommands(commands.Cog):
     async def search(self, interaction: discord.Interaction, 키워드: str) -> None:
         await interaction.response.defer()
         try:
-            lavalink_player = await self.player.ensure_voice(interaction)
+
+            active_player = await self.player.ensure_voice(interaction)
+
             tracks = await self.player.search_safe_tracks(키워드, self.config.bot.search_results)
             if not tracks:
                 await interaction.followup.send("조건에 맞는 검색 결과가 없습니다.")
                 return
 
-            async def on_pick(pick_interaction: discord.Interaction, track):
+
+            async def on_pick(pick_interaction: discord.Interaction, track) -> None:
                 started = await self.player.enqueue_and_maybe_play(
                     pick_interaction.guild_id,
-                    lavalink_player,
+                    active_player,
                     track,
                 )
-                text = f"✅ 큐에 추가: **{track.title}**"
+                text = f"✅ 큐에 추가: **{getattr(track, 'title', '제목 없음')}**"
+
                 if started:
                     text += "\n🎶 바로 재생을 시작합니다."
                 await pick_interaction.response.send_message(text, ephemeral=True)
@@ -72,7 +90,9 @@ class MusicCommands(commands.Cog):
     async def play(self, interaction: discord.Interaction, 입력: str) -> None:
         await interaction.response.defer()
         try:
-            lavalink_player = await self.player.ensure_voice(interaction)
+
+            active_player = await self.player.ensure_voice(interaction)
+
             if 입력.startswith(("http://", "https://")):
                 tracks = await self.player.search_tracks(입력)
             else:
@@ -83,10 +103,14 @@ class MusicCommands(commands.Cog):
                 return
 
             for track in tracks:
-                await self.player.enqueue_and_maybe_play(interaction.guild_id, lavalink_player, track)
+
+                await self.player.enqueue_and_maybe_play(interaction.guild_id, active_player, track)
 
             if len(tracks) == 1:
-                await interaction.followup.send(f"🎵 재생 목록에 추가: **{tracks[0].title}**")
+                await interaction.followup.send(
+                    f"🎵 재생 목록에 추가: **{getattr(tracks[0], 'title', '제목 없음')}**"
+                )
+
             else:
                 await interaction.followup.send(f"📚 플레이리스트 {len(tracks)}곡을 큐에 추가했습니다.")
         except RuntimeError as exc:
@@ -161,6 +185,9 @@ class MusicBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         self.music = MusicPlayer(self, self.config_obj)
+
+        await self.music.setup_nodes()
+
         await self.add_cog(MusicCommands(self, self.music, self.config_obj))
 
         if self.config_obj.discord.test_guild_ids:
@@ -173,10 +200,6 @@ class MusicBot(commands.Bot):
             await self.tree.sync()
             logger.info("글로벌 커맨드 동기화 완료")
 
-    async def on_socket_response(self, payload):
-        await super().on_socket_response(payload)
-        if self.music:
-            await self.music.voice_update_handler(payload)
 
     async def close(self) -> None:
         if self.music:
