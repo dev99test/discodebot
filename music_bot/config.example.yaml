@@ -1,0 +1,13 @@
+discord:
+  token: ""
+  test_guild_ids: []
+
+lavalink:
+  host: ""
+  port: 0
+  password: ""
+
+bot:
+  default_volume: 100
+  progress_update_sec: 2
+  search_results: 10
